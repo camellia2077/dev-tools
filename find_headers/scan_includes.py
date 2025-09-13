@@ -4,7 +4,7 @@ from collections import Counter
 
 # ==================== 全局配置区 ====================
 # 1. 设置要扫描的文件夹路径
-TARGET_PATH = r"C:\Computer\my_github\github_cpp\bills_master\Bills_Master_cpp\Bills_Master\src"
+TARGET_PATH = r"C:\Computer\my_github\github_cpp\time_master\Time_Master_cpp\time_master\src"
 
 # 2. 设置要分析的前 N 个结果
 TOP_N = 50
