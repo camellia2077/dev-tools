@@ -1,20 +1,22 @@
+# comment_processor.py
+
 import os
 import re
+from file_handler import find_source_files  # 从我们的文件处理模块导入函数
 
 class CommentUpdater:
     """
     一个用于管理源代码文件头部路径注释的类。
-
-    它会遍历指定目录下的 .hpp 和 .cpp 文件，
-    确保每个文件的第一行都有一个正确的、相对于根目录的路径注释。
+    它会确保每个文件的第一行都有一个正确的、相对于根目录的路径注释。
     """
 
-    def __init__(self, src_dir):
+    def __init__(self, src_dir, extensions=(".hpp", ".cpp", ".h", ".c")):
         """
         初始化 CommentUpdater。
 
         Args:
             src_dir (str): 要处理的源代码根目录的路径。
+            extensions (tuple): 要处理的文件扩展名元组。
         
         Raises:
             FileNotFoundError: 如果提供的目录不存在。
@@ -23,18 +25,9 @@ class CommentUpdater:
             raise FileNotFoundError(f"错误: 目录 '{src_dir}' 不存在或不是一个有效的目录。")
         
         self.src_dir = os.path.abspath(src_dir)
+        self.extensions = extensions
         self.added_count = 0
         self.updated_count = 0
-
-    def _find_source_files(self):
-        """
-        遍历目录，生成器函数，逐一产出所有 .hpp 和 .cpp 文件的绝对路径。
-        这是一个内部方法。
-        """
-        for root, _, files in os.walk(self.src_dir):
-            for file in files:
-                if file.endswith((".hpp", ".cpp")):
-                    yield os.path.join(root, file)
 
     def _process_single_file(self, file_path):
         """
@@ -72,7 +65,6 @@ class CommentUpdater:
                         lines.insert(0, correct_path_comment)
                         status = 'added'
                 
-                # 如果文件被修改，则写回
                 if status in ['added', 'updated']:
                     f.seek(0)
                     f.writelines(lines)
@@ -90,7 +82,8 @@ class CommentUpdater:
         执行注释更新的主流程。
         """
         print(f"🚀 开始处理目录: {self.src_dir}\n")
-        for file_path in self._find_source_files():
+        # 调用导入的函数来获取文件列表
+        for file_path in find_source_files(self.src_dir, self.extensions):
             self._process_single_file(file_path)
         print(f"\n处理完成。")
         
@@ -104,19 +97,3 @@ class CommentUpdater:
         print(f"- 修改注释的文件数量: {self.updated_count}")
         print(f"✅ 总共更改的文件数量: {total_changed}")
         print("========================================")
-
-
-if __name__ == "__main__":
-    # --- 配置区 ---
-    # 只需在此处修改您的源代码根目录
-    SRC_DIR = r"C:\Computer\my_github\github_cpp\time_master\Time_Master_cpp\apps\time_master\src"
-
-    try:
-        # 1. 创建实例
-        updater = CommentUpdater(SRC_DIR)
-        # 2. 运行处理
-        updater.run()
-        # 3. 打印总结
-        updater.print_summary()
-    except FileNotFoundError as e:
-        print(e)

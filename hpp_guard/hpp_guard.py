@@ -3,6 +3,7 @@ import re
 import sys
 import argparse
 from pathlib import Path
+# 用于检查和修复 C++ 头文件 (.hpp) 中的头文件守卫 (Include Guards)
 
 def generate_expected_guard(file_path: Path) -> str:
     """

@@ -1,6 +1,7 @@
 import os
 import re
 from collections import Counter
+# 统计并生成 C++ 预编译头文件 (PCH) 的建议内容
 
 # ==================== 全局配置区 ====================
 # 1. 设置要扫描的文件夹路径
