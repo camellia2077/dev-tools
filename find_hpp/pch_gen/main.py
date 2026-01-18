@@ -1,75 +1,60 @@
-"""
-主程序入口：整合 CLI、Scanner、Analyzer 和 Generator。
-"""
+# main.py
 import sys
 import argparse
+from collections import Counter
 
-# 使用相对导入 (需要作为模块运行) 或者将包路径加入 sys.path
+# 注意：这里路径发生了变化
 from . import config
-from . import scanner
-from . import analyzer
-from . import generator
+from .io.scanner import FileFinder           # 移动到了 io/
+from .core.parser import HeaderParser        # 移动到了 core/
+from .core.classifier import HeaderClassifier# 移动到了 core/
+from .core.analyzer import ReportGenerator   # 移动到了 core/
+from .io.writer import write_pch_content     # 移动到了 io/
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="扫描 C++ 项目并生成预编译头文件 (PCH) 建议。",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    
-    parser.add_argument("src_path", help="要扫描的源代码根目录路径")
-    
-    parser.add_argument(
-        "-n", "--top", 
-        type=int, 
-        default=50, 
-        help="只分析出现频率最高的前 N 个头文件 (默认: 50)"
-    )
-    
-    parser.add_argument(
-        "--extra-libs", 
-        nargs="+", 
-        default=[], 
-        help="追加第三方库的识别特征（前缀），例如: --extra-libs mylib/ boost/"
-    )
-
+    parser = argparse.ArgumentParser(description="PCH (预编译头文件) 生成工具")
+    parser.add_argument("src_path", help="源代码根目录")
+    parser.add_argument("-n", "--top", type=int, default=50, help="分析前 N 个高频头文件")
+    parser.add_argument("--extra-libs", nargs="+", default=[], help="追加第三方库前缀 (例如: mylib/)")
     return parser.parse_args()
 
 def run():
+    # ... (保持不变) ...
     args = parse_arguments()
-    
-    target_path = args.src_path
-    top_n = args.top
-    # 组合配置
-    current_third_party_identifiers = config.DEFAULT_THIRD_PARTY_IDENTIFIERS + args.extra_libs
 
-    # 1. 扫描阶段
-    print(f"// 正在扫描目录: {target_path} ...", file=sys.stderr)
+    # 1. 组装组件
+    finder = FileFinder(extensions=('.cpp', '.hpp', '.h', '.cc', '.cxx', '.c'))
+    parser = HeaderParser()
+    
+    tp_prefixes = config.DEFAULT_THIRD_PARTY_IDENTIFIERS + args.extra_libs
+    classifier = HeaderClassifier(config.CPP_STANDARD_HEADERS, tp_prefixes)
+    
+    analyzer = ReportGenerator(classifier)
+
+    # 2. 执行扫描
+    print(f"// 正在扫描目录: {args.src_path} ...", file=sys.stderr)
+    
+    stats = Counter()
     try:
-        files = scanner.scan_directory(target_path, ('.cpp', '.hpp', '.c', '.h', '.cc', '.cxx'))
+        for file_path in finder.find_files(args.src_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    headers = parser.parse_content(f.read())
+                    stats.update(headers)
+            except Exception:
+                continue
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not files:
-        print("Error: 未找到 C++ 源代码文件。", file=sys.stderr)
-        sys.exit(1)
+    if not stats:
+        print("// 未找到任何头文件引用，请检查路径。", file=sys.stderr)
+        return
 
-    # 2. 统计阶段
-    counts = scanner.extract_includes_stats(files)
-    if not counts:
-        print("Warning: 未扫描到任何 #include 指令。", file=sys.stderr)
-        sys.exit(0)
-    
-    top_items = counts.most_common(top_n)
-
-    # 3. 分析阶段
-    std_lib, third_party, project_lib = analyzer.classify_headers(
-        top_items, 
-        current_third_party_identifiers
-    )
-
-    # 4. 生成阶段
-    generator.generate_pch_content(std_lib, third_party, project_lib)
+    # 3. 分析与输出
+    top_items = stats.most_common(args.top)
+    report = analyzer.generate_report(top_items)
+    write_pch_content(report, stream=sys.stdout)
 
 if __name__ == '__main__':
     run()
