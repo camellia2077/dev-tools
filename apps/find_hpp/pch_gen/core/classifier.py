@@ -1,4 +1,4 @@
-# classifier.py
+# core/classifier.py
 from enum import Enum
 from typing import Set, List
 

@@ -1,4 +1,4 @@
-# analyzer.py
+# core/analyzer.py
 from typing import List, Tuple, Dict, NamedTuple
 from .classifier import HeaderClassifier, HeaderCategory
 

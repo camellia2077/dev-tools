@@ -1,4 +1,4 @@
-# parser.py
+# core/parser.py
 import re
 from typing import List
 

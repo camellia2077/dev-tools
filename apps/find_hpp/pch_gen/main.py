@@ -5,11 +5,11 @@ from collections import Counter
 
 # 注意：这里路径发生了变化
 from . import config
-from .io.scanner import FileFinder           # 移动到了 io/
-from .core.parser import HeaderParser        # 移动到了 core/
-from .core.classifier import HeaderClassifier# 移动到了 core/
-from .core.analyzer import ReportGenerator   # 移动到了 core/
-from .io.writer import write_pch_content     # 移动到了 io/
+from .io.scanner import FileFinder          
+from .core.parser import HeaderParser       
+from .core.classifier import HeaderClassifier
+from .core.analyzer import ReportGenerator 
+from .io.writer import write_pch_content
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="PCH (预编译头文件) 生成工具")
@@ -19,11 +19,13 @@ def parse_arguments():
     return parser.parse_args()
 
 def run():
-    # ... (保持不变) ...
     args = parse_arguments()
-
+    exclude_list = ["pch.hpp", "cmake_pch.hxx"]
     # 1. 组装组件
-    finder = FileFinder(extensions=('.cpp', '.hpp', '.h', '.cc', '.cxx', '.c'))
+    finder = FileFinder(
+        extensions=('.cpp', '.hpp', '.h', '.cc', '.cxx', '.c'),
+        exclude_names=exclude_list
+    )
     parser = HeaderParser()
     
     tp_prefixes = config.DEFAULT_THIRD_PARTY_IDENTIFIERS + args.extra_libs
