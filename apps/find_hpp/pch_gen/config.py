@@ -6,7 +6,8 @@
 DEFAULT_THIRD_PARTY_IDENTIFIERS = [
     "nlohmann/",
     "sqlite3.h",
-    "toml++/toml.h",
+    "yyjson.h",          
+    "toml++/",           # 改为文件夹前缀，可同时兼容 .h 和 .hpp
     "windows.h",
 ]
 

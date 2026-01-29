@@ -1,0 +1,47 @@
+Checks: >
+  -*,
+  readability-identifier-naming,
+  llvm-include-order,
+  google-readability-braces-around-statements,
+  modernize-pass-by-value,
+  google-explicit-constructor,
+  modernize-use-override,
+  google-runtime-references,
+  readability-make-member-function-const
+
+CheckOptions:
+  # 1. 命名规范：函数 PascalCase
+  - key:             readability-identifier-naming.FunctionCase
+    value:           CamelCase
+  
+  # 2. 命名规范：局部变量 snake_case
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  
+  # 3. 命名规范：类成员变量以 _ 结尾
+  - key:             readability-identifier-naming.ClassMemberCase
+    value:           lower_case
+  - key:             readability-identifier-naming.ClassMemberSuffix
+    value:           _
+
+  # 4. 命名规范：常量以小写 k 开头
+  - key:             readability-identifier-naming.ConstantPrefix
+    value:           k
+  - key:             readability-identifier-naming.ConstantCase
+    value:           CamelCase
+
+  # 5. 命名规范：类（Class）和结构体（Struct）使用 PascalCase
+  - key:             readability-identifier-naming.ClassCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.StructCase
+    value:           CamelCase
+
+  # 6. 命名规范：宏使用全大写
+  - key:             readability-identifier-naming.MacroDefinitionCase
+    value:           UPPER_CASE
+
+  # 7. 命名规范：枚举值（Enum Constant）使用 k + PascalCase
+  - key:             readability-identifier-naming.EnumConstantPrefix
+    value:           k
+  - key:             readability-identifier-naming.EnumConstantCase
+    value:           CamelCase
