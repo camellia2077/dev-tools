@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 def calculate_expected_guard(file_path: Path, project_root: Path) -> str:
-    """[逻辑] 根据文件路径生成 Google 风格的头文件守卫名称。"""
+    """[逻辑] 根据文件路径生成符合 Google 风格且无双下划线的头文件守卫。"""
     try:
         rel_path = file_path.relative_to(project_root)
     except ValueError:
@@ -12,12 +12,29 @@ def calculate_expected_guard(file_path: Path, project_root: Path) -> str:
     parts = list(rel_path.parts)
     processed_parts = []
     
-    for part in parts:
-        part = part.replace('.', '_')
-        part = re.sub(r'(?<!^)(?=[A-Z])', '_', part) # CamelCase -> Snake_Case
-        processed_parts.append(part.upper())
+    for i, part in enumerate(parts):
+        is_file = (i == len(parts) - 1)
+        
+        if is_file:
+            # 1. 先去掉扩展名，统一记下是否需要加 _H
+            stem = Path(part).stem
+            # 2. 处理驼峰命名或其它特殊符号
+            # 在大写字母前加下划线（仅限原有的驼峰）
+            stem = re.sub(r'(?<!^)(?=[A-Z])', '_', stem)
+            # 3. 转换为大写并替换点
+            part_str = stem.upper().replace('.', '_')
+            # 4. 拼接 Google 要求的 _H
+            part_str += "_H"
+        else:
+            # 处理目录名
+            part_str = re.sub(r'(?<!^)(?=[A-Z])', '_', part)
+            part_str = part_str.upper().replace('.', '_')
+        
+        processed_parts.append(part_str)
 
-    return '_'.join(processed_parts) + '_'
+    # 5. 用单下划线连接，并在末尾加上 Google 规范的最后一个下划线
+    # 最终形式: PROJECT_PATH_FILE_H_
+    return '_'.join(processed_parts).replace('__', '_') + '_'
 
 def extract_guard_info(content: str) -> Tuple[Optional[str], bool]:
     """

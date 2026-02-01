@@ -1,7 +1,4 @@
----
-description: Update Markdown Description
----
-
+### Update Markdown Description
 #### 1. 结构与格式 (Structure & Formatting)
 - **逆序排列**: 最新的版本必须出现在文件顶部（在 Header 之下）。
 - **版本标题**: 必须使用二级标题，格式为 `## [vX.Y.Z] - YYYY-MM-DD`。
