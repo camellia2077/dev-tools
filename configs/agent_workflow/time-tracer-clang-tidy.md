@@ -2,46 +2,37 @@
 description: Safe Clang-Tidy Refactoring Workflow
 ---
 
-# Safe Refactoring Protocol (Agent Guidelines)
+This workflow guides the process of applying Clang-Tidy fixes and verifying them using the fast build/test pipeline.
 
-In order to safely improve code quality without breaking the build, the Agent must strictly follow this **Iterative Loop**.
+1. **Select Refactoring Tasks (Batch Strategy)**:
+   - Check the `time_tracer_cpp/apps/time_tracer/build_tidy/tasks/` directory.
+   - **Trivial Strategy**: For cosmetic changes (braces, const-correctness, local renames), select **3-5 task logs** to process in one go.
+   - **Complex Strategy**: For structural changes (header renames, public API changes), select **ONLY 1 task log** to process atomically.
+   - **C++23 Style Guidelines**:
+     - **Names**: `PascalCase` for Functions/Classes, `snake_case` for Variables/Params, `snake_case_` for Class Members, and `kPascalCase` for Constants.
+     - **Types**: Use trailing return types: `auto FunctionName(...) -> ReturnType`.
+     - **Safety**: Prefer `std::string_view` for inputs and `std::expected`/`std::optional` for results.
 
-### Core Rules: "3-1-Revert"
-1. **3 Successful Cycles**: Stop and checkpoint after 3 successful fix iterations.
-2. **1 Build Failure**: Stop IMMEDIATELY if `build_fast.sh` fails.
-3. **Revert on Fail**: If the build fails, **REVERT** the last change. Do not try to "fix forward".
+2. **Impact Analysis**:
+   - Before renaming any function or class found in the task logs, **MUST** search for all call sites using `grep` or `ripgrep`.
+   - Identify all affected modules (adapters, application, domain, etc.).
 
----
+3. **Code Refactoring & Safety**:
+   - Apply suggested changes based on the selected task logs.
+   - **Edit Safety**: If a tool fails due to "content not found", re-read the file via `view_file` to update context.
 
-### 1. Analysis (Scan)
-Run the check-only script to generate a diagnostic report.
-```bash
-./scripts/build_tidy.sh
-# Expected: Exit code 1 (due to warnings). This is normal.
-```
+4. **Risk-Based Verification**:
+   - **Level 1: Build Verification (For Trivial/Cosmetic Changes)**:
+     // turbo
+     `C:\msys64\msys2_shell.cmd -ucrt64 -defterm -no-start -where . -c "./time_tracer_cpp/apps/time_tracer/scripts/build_fast.sh"`
+     - If successful, proceed to Cleanup.
 
-### 2. Selection (Scope)
-Parse the log to choose a **small, atomic** task.
-```bash
-python scripts/tidy_analyzer.py build_tidy/build.log
-```
-**Constraint**: Pick **ONE** file or **ONE** specific rule type (e.g., `readability-identifier-naming`).
+   - **Level 2: Full Regression Test (For Logic/API Changes)**:
+     // turbo
+     - Run Build Verification first.
+     - Then run business logic tests (using input redirection to avoid hangs):
+       `cmd /c "cd my_test/test_executables && echo N | run_fast.bat"`
+     - Ensure the script returns exit code 0 and "SUCCESS".
 
-### 3. Execution (Apply Fix)
-- Modify the code manually.
-- **Do not** use `--fix` blindly.
-- Apply no more than **5 changes** in a single batch.
-
-### 4. Verification (Verify)
-Run the fast build script (skips optimization/static analysis) to verify syntax.
-```bash
-./scripts/build_fast.sh
-```
-- **If SUCCESS (Exit 0)**: 
-  - Increment cycle counter.
-  - If counter < 3, GOTO Step 2.
-  - If counter == 3, STOP and notify user.
-- **If FAILURE**: 
-  - **STOP**.
-  - **REVERT** changes.
-  - Notify user of the specific failure.
+5. **Cleanup**:
+   - Only if verification passes, delete the processed task log files from `time_tracer_cpp/apps/time_tracer/build_tidy/tasks/`.
