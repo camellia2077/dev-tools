@@ -16,7 +16,7 @@ trigger: always_on
  -CODE_PHILOSOPHY: Keep simple & maintainable. AVOID over-defensive logic. Use physical separation for logic (keep files 100-300 lines) but avoid over-engineering.
  -**SHELL_RESTRICTION**:
  -All script executions (.sh) and build commands (CMake, Ninja) MUST be wrapped for UCRT64.
- -If the Agent MUST run commands via PowerShell, it MUST use the explicit path: `C:\msys64\usr\bin\bash.exe -lc "your_command"` or `C:\msys64\msys2_shell.cmd -ucrt64 -defterm -no-start -where . -c "your_command"`.
+ -If the Agent MUST run commands via PowerShell, it MUST use the explicit path: `C:\msys64\msys2_shell.cmd -ucrt64 -defterm -no-start -where . -c "your_command"`.
 
 
  -**PATH_LOGIC**:
@@ -50,5 +50,4 @@ SAFETY:
 STRUCTURE:
 
  -Headers: Use absolute path from src/.
-
 
