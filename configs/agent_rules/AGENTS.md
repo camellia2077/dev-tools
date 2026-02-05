@@ -2,6 +2,11 @@
 trigger: always_on
 ---
 
+[CONTEXT]
+Environment: MSYS2 UCRT64 on Windows.
+Target: C++23 High-Performance Library (time_tracer).
+Compiler: GCC 13+ / Clang 16+ (UCRT64 flavor).
+
 [WORKFLOW RULES]
 TASK: Compile success required. SKIP runtime/testing.
 PREP: Analyze context deeply. Clarify ambiguities BEFORE coding.
