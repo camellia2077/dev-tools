@@ -1,144 +1,263 @@
+from __future__ import annotations
+
 import argparse
-import sys
-import re
 import difflib
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
-# 配置常量
-CPP_EXTENSIONS = {'.h', '.hpp', '.cpp', '.c', '.cc', '.hh'}
+from dev_tools.config import (
+    load_config,
+    normalize_extensions,
+    normalize_patterns,
+    resolve_path,
+    validate_mode,
+)
+from dev_tools.file_scan import FileScanOptions, display_path, iter_files
+
+
+DEFAULT_EXTENSIONS = (".h", ".hpp", ".cpp", ".c", ".cc", ".hh")
 INCLUDE_PATTERN = re.compile(r'#include\s+"([^/\\\s]+\.(?:hpp|h|cpp|c|cc|hh))"')
 
-def build_file_map(root_dir):
-    """
-    职责：【索引构建】
-    遍历目录，建立 "文件名 -> 相对路径" 的映射字典。
-    """
-    file_map = {}
-    for path in root_dir.rglob('*'):
-        if path.is_file() and path.suffix in CPP_EXTENSIONS:
-            try:
-                # as_posix() 确保路径分隔符为正斜杠 /
-                rel_path = path.relative_to(root_dir).as_posix()
-                file_map[path.name] = rel_path
-            except ValueError:
-                continue
+
+@dataclass(frozen=True)
+class FixIncludeOptions:
+    scan_dir: Path
+    relative_to: Path
+    extensions: tuple[str, ...]
+    include: tuple[str, ...]
+    exclude: tuple[str, ...]
+    mode: str
+
+
+@dataclass
+class FixIncludeReport:
+    scanned: int = 0
+    changed_files: int = 0
+    mismatches: int = 0
+    errors: int = 0
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.description = "Check or fix C/C++ include paths to be relative to a source root."
+    parser.add_argument(
+        "scan_dir",
+        nargs="?",
+        default=None,
+        help="Directory containing source files to rewrite.",
+    )
+    parser.add_argument(
+        "--relative-to",
+        default=None,
+        help="Base directory used to build the include path index and rewritten relative paths.",
+    )
+    parser.add_argument(
+        "--extensions",
+        "--ext",
+        nargs="+",
+        default=None,
+        help="Target file extensions, e.g. .hpp .cpp .h .c",
+    )
+    parser.add_argument("--include", nargs="+", default=None, help="Optional include globs.")
+    parser.add_argument("--exclude", nargs="+", default=None, help="Optional exclude globs.")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--check", action="store_true", help="Check only.")
+    mode_group.add_argument("--fix", action="store_true", help="Apply include fixes in place.")
+    mode_group.add_argument("--dry-run", action="store_true", help="Preview diffs without writing.")
+    parser.add_argument("--config", default=None, help="Optional dev-tools.toml path.")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="fix-include")
+    add_arguments(parser)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return run_from_namespace(args)
+
+
+def run_from_namespace(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    config_start_dir = _resolve_config_start_dir(args.scan_dir, cwd)
+    config = load_config(args.config, config_start_dir)
+
+    scan_dir = resolve_path(
+        args.scan_dir or config.fix_include.scan_dir,
+        cwd=cwd,
+        config_path=config.path,
+    ) or cwd
+    relative_to = resolve_path(
+        args.relative_to or config.fix_include.relative_to,
+        cwd=cwd,
+        config_path=config.path,
+    ) or scan_dir
+    options = FixIncludeOptions(
+        scan_dir=scan_dir,
+        relative_to=relative_to,
+        extensions=normalize_extensions(
+            args.extensions if args.extensions is not None else config.fix_include.extensions,
+            DEFAULT_EXTENSIONS,
+        ),
+        include=normalize_patterns(
+            args.include if args.include is not None else config.fix_include.include
+        ),
+        exclude=normalize_patterns(
+            args.exclude if args.exclude is not None else config.fix_include.exclude
+        ),
+        mode=validate_mode(_resolve_mode(args, config.fix_include.mode), "check"),
+    )
+
+    if not options.scan_dir.is_dir():
+        print(f"[ERROR] Directory not found: {options.scan_dir}")
+        return 2
+    if not options.relative_to.is_dir():
+        print(f"[ERROR] Relative-base directory not found: {options.relative_to}")
+        return 2
+
+    return run_fix_include(options)
+
+
+def run_fix_include(options: FixIncludeOptions) -> int:
+    print(f"[SCAN] {options.scan_dir}")
+    print(f"[MODE] {options.mode}")
+    print(f"[RELATIVE_TO] {options.relative_to}")
+
+    file_map = build_file_map(options)
+    report = FixIncludeReport()
+
+    scan_options = FileScanOptions(
+        scan_dir=options.scan_dir,
+        extensions=options.extensions,
+        include=options.include,
+        exclude=options.exclude,
+    )
+    for file_path in iter_files(scan_options):
+        report.scanned += 1
+        status = process_single_file(file_path, options=options, file_map=file_map)
+        if status == "changed":
+            report.changed_files += 1
+            report.mismatches += 1
+        elif status == "mismatch":
+            report.mismatches += 1
+        elif status == "error":
+            report.errors += 1
+
+    print("\n================== Summary ==================")
+    print(f"Scanned files : {report.scanned}")
+    print(f"Mismatches    : {report.mismatches}")
+    print(f"Changed files : {report.changed_files}")
+    print(f"Errors        : {report.errors}")
+    print("=============================================")
+
+    if report.errors:
+        return 2
+    if options.mode != "fix" and report.mismatches:
+        return 1
+    return 0
+
+
+def build_file_map(options: FixIncludeOptions) -> dict[str, str]:
+    file_map: dict[str, str] = {}
+    scan_options = FileScanOptions(
+        scan_dir=options.relative_to,
+        extensions=options.extensions,
+        include=(),
+        exclude=options.exclude,
+    )
+    for path in iter_files(scan_options):
+        rel_path = path.relative_to(options.relative_to).as_posix()
+        file_map[path.name] = rel_path
     return file_map
 
-def read_source_file(file_path):
-    """
-    职责：【文件读取】
-    处理编码兼容性 (UTF-8 / GBK)，返回文件内容字符串。
-    如果读取失败，返回 None。
-    """
-    try:
-        return file_path.read_text(encoding='utf-8')
-    except UnicodeDecodeError:
-        try:
-            return file_path.read_text(encoding='gbk')
-        except Exception as e:
-            print(f"Skipping {file_path}: {e}")
-            return None
 
-def fix_include_lines(content, file_map):
-    """
-    职责：【核心转换逻辑】
-    纯粹的字符串处理。输入原始内容，输出新旧行列表和修改标记。
-    不涉及任何 IO 操作。
-    """
+def process_single_file(
+    file_path: Path,
+    *,
+    options: FixIncludeOptions,
+    file_map: dict[str, str],
+) -> str:
+    try:
+        content = read_source_file(file_path)
+    except OSError as error:
+        print(f"[ERROR] {display_path(file_path, options.scan_dir)}: {error}")
+        return "error"
+
+    old_lines, new_lines, modified = fix_include_lines(content, file_map)
+    if not modified:
+        return "ok"
+
+    rel_path = display_path(file_path, options.scan_dir)
+    prefix = {
+        "fix": "[FIX]",
+        "check": "[CHECK]",
+        "dry-run": "[DRY-RUN]",
+    }[options.mode]
+    print(f"{prefix} {rel_path}")
+
+    if options.mode in {"fix", "dry-run"}:
+        diff = difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile=f"a/{file_path.name}",
+            tofile=f"b/{file_path.name}",
+        )
+        print("".join(diff))
+
+    if options.mode == "fix":
+        try:
+            file_path.write_text("".join(new_lines), encoding="utf-8", newline="\n")
+        except OSError as error:
+            print(f"[ERROR] {rel_path}: {error}")
+            return "error"
+        return "changed"
+    return "mismatch"
+
+
+def read_source_file(file_path: Path) -> str:
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return file_path.read_text(encoding="gbk")
+
+
+def fix_include_lines(content: str, file_map: dict[str, str]) -> tuple[list[str], list[str], bool]:
     old_lines = content.splitlines(keepends=True)
-    new_lines = []
+    new_lines: list[str] = []
     modified = False
 
     for line in old_lines:
         match = INCLUDE_PATTERN.search(line)
         if match:
             filename = match.group(1)
-            # 检查引用的文件是否存在于我们的索引中
             if filename in file_map:
                 new_path = file_map[filename]
-                # 仅当新路径与原写法不同时才替换
                 if new_path != filename:
-                    new_line = line.replace(f'"{filename}"', f'"{new_path}"')
-                    new_lines.append(new_line)
+                    new_lines.append(line.replace(f'"{filename}"', f'"{new_path}"'))
                     modified = True
                     continue
-        # 保持原样
         new_lines.append(line)
-    
     return old_lines, new_lines, modified
 
-def save_and_report_diff(file_path, root_dir, old_lines, new_lines):
-    """
-    职责：【结果输出】
-    打印 Diff 信息并将新内容写入文件。
-    """
-    # 生成 Diff
-    diff = difflib.unified_diff(
-        old_lines, 
-        new_lines, 
-        fromfile=f"a/{file_path.name}", 
-        tofile=f"b/{file_path.name}"
-    )
-    
-    print(f"\nRefactoring: {file_path.relative_to(root_dir)}")
-    print("".join(diff))
 
-    # 写入文件
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.writelines(new_lines)
+def _resolve_mode(args: argparse.Namespace, config_mode: str | None) -> str | None:
+    if args.fix:
+        return "fix"
+    if args.dry_run:
+        return "dry-run"
+    if args.check:
+        return "check"
+    return config_mode
 
-def process_single_file(file_path, root_dir, file_map):
-    """
-    职责：【单文件流程编排】
-    串联读取、转换、写入三个步骤。
-    """
-    content = read_source_file(file_path)
-    if content is None:
-        return
 
-    old_lines, new_lines, modified = fix_include_lines(content, file_map)
-
-    if modified:
-        save_and_report_diff(file_path, root_dir, old_lines, new_lines)
-
-def scan_and_update(root_dir, file_map):
-    """
-    职责：【批量任务分发】
-    遍历目标列表，对每个文件调用处理函数。
-    """
-    target_files = [
-        p for p in root_dir.rglob('*') 
-        if p.is_file() and p.suffix in CPP_EXTENSIONS
-    ]
-
-    for file_path in target_files:
-        process_single_file(file_path, root_dir, file_map)
-
-def run():
-    """
-    职责：【程序入口】
-    处理命令行参数，初始化环境，启动主流程。
-    """
-    parser = argparse.ArgumentParser(description="Fix C++ include paths to be relative to source root.")
-    
-    parser.add_argument(
-        "target_dir", 
-        type=str, 
-        help="Target source directory to scan and fix (e.g., src/)"
-    )
-
-    args = parser.parse_args()
-    target_path = Path(args.target_dir).resolve()
-
-    if target_path.exists() and target_path.is_dir():
-        print(f"--- Refactoring Includes in {target_path} ---\n")
-        
-        # 1. 建立全局索引
-        mapping = build_file_map(target_path)
-        # 2. 执行更新
-        scan_and_update(target_path, mapping)
-        
-        print("\n--- Process Finished ---")
+def _resolve_config_start_dir(scan_dir: str | None, cwd: Path) -> Path:
+    if not scan_dir:
+        return cwd
+    candidate = Path(scan_dir)
+    if not candidate.is_absolute():
+        candidate = (cwd / candidate).resolve()
     else:
-        print(f"Error: Directory not found or is not a directory: {target_path}")
-        sys.exit(1)
+        candidate = candidate.resolve()
+    return candidate if candidate.is_dir() else candidate.parent

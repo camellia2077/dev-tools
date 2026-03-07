@@ -1,35 +1,67 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
+
+from dev_tools.file_scan import FileScanOptions, iter_files
+
 from . import worker
 
-def scan_and_process_directory(directory: str, fix_mode: bool):
-    """遍历目录并协调处理流程。"""
-    project_root = Path(directory).resolve()
-    
-    print(f"--- 模式: {'修复 (Fix)' if fix_mode else '检查 (Check)'} ---")
-    print(f"--- 根目录: {project_root} ---\n")
+
+@dataclass(frozen=True)
+class ScanOptions:
+    scan_dir: Path
+    relative_to: Path
+    extensions: tuple[str, ...]
+    include: tuple[str, ...]
+    exclude: tuple[str, ...]
+    mode: str
+
+
+def scan_and_process_directory(options: ScanOptions) -> int:
+    print(f"[SCAN] {options.scan_dir}")
+    print(f"[MODE] {options.mode}")
+    print(f"[RELATIVE_TO] {options.relative_to}")
 
     stats = {
-        'MATCH': 0, 'MISMATCH': 0, 'FIXED': 0, 'SKIP': 0, 'ERROR': 0
+        "MATCH": 0,
+        "MISMATCH": 0,
+        "FIXED": 0,
+        "SKIP": 0,
+        "ERROR": 0,
     }
 
-    # 使用 rglob 获取所有 .hpp 文件
-    files = list(project_root.rglob('*.hpp'))
-    
+    files = list(
+        iter_files(
+            FileScanOptions(
+                scan_dir=options.scan_dir,
+                extensions=options.extensions,
+                include=options.include,
+                exclude=options.exclude,
+            )
+        )
+    )
+
     for file_path in files:
-        status = worker.process_single_file(file_path, project_root, fix_mode)
+        status = worker.process_single_file(
+            file_path,
+            scan_dir=options.scan_dir,
+            relative_to=options.relative_to,
+            mode=options.mode,
+        )
         stats[status] += 1
 
-    print("\n--- 检查总结 ---")
-    print(f"扫描文件总数: {len(files)}")
-    print(f"  ✅ 符合规范: {stats['MATCH']}")
-    print(f"  🟡 跳过处理: {stats['SKIP']}")
-    print(f"  ❗️ 读取错误: {stats['ERROR']}")
+    print("\n================== Summary ==================")
+    print(f"Scanned files : {len(files)}")
+    print(f"Matched guards: {stats['MATCH']}")
+    print(f"Mismatches    : {stats['MISMATCH']}")
+    print(f"Fixed guards  : {stats['FIXED']}")
+    print(f"Skipped files : {stats['SKIP']}")
+    print(f"Errors        : {stats['ERROR']}")
+    print("=============================================")
 
-    if fix_mode:
-        print(f"  🔧 成功修复: {stats['FIXED']}")
-    else:
-        print(f"  ❌ 发现不匹配: {stats['MISMATCH']}")
-        if stats['MISMATCH'] > 0:
-            print("\n提示: 添加 --fix 参数以自动修复这些问题。")
-    
-    print("--- 完成 ---")
+    if stats["ERROR"]:
+        return 2
+    if options.mode != "fix" and stats["MISMATCH"]:
+        return 1
+    return 0

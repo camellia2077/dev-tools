@@ -1,4 +1,14 @@
-from fix_include.main import run
-# 修复没有使用相对地址直接引用头文件的问题
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from apps.fix_include.fix_include.main import main
+
+
 if __name__ == "__main__":
-    run()
+    raise SystemExit(main())

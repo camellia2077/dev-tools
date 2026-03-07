@@ -1,3 +1,3 @@
-cd /d %~dp0
-
-python run.py Your:\Path
+@echo off
+cd /d %~dp0\..\..
+python -m dev_tools find-hpp %*

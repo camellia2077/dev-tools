@@ -1,0 +1,33 @@
+[auto_comments]
+scan_dir = "src"
+relative_to = "src"
+extensions = [".hpp", ".cpp", ".h", ".c"]
+include = []
+exclude = [".git", "build", "out", "temp", "__pycache__"]
+mode = "check"
+
+[hpp_guard]
+scan_dir = "src"
+relative_to = "."
+extensions = [".hpp", ".h"]
+include = []
+exclude = [".git", "build", "out", "temp", "__pycache__"]
+mode = "check"
+
+[fix_include]
+scan_dir = "src"
+relative_to = "src"
+extensions = [".hpp", ".cpp", ".h", ".c", ".cc", ".hh"]
+include = []
+exclude = [".git", "build", "out", "temp", "__pycache__"]
+mode = "check"
+
+[find_hpp]
+scan_dir = "src"
+extensions = [".hpp", ".cpp", ".h", ".c", ".cc", ".cxx"]
+include = []
+exclude = [".git", "build", "out", "temp", "__pycache__"]
+top = 50
+extra_libs = []
+exclude_names = ["pch.hpp", "cmake_pch.hxx"]
+output = "temp/pch_report.hpp"

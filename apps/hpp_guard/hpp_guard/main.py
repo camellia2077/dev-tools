@@ -1,22 +1,143 @@
-import os
-import sys
+from __future__ import annotations
+
 import argparse
-from . import scanner
+from pathlib import Path
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="检查并修复 C++ 头文件 (.hpp) 中的头文件守卫 (Google Style)。",
-        epilog="示例: python run.py ./src --fix"
+from dev_tools.config import (
+    load_config,
+    normalize_extensions,
+    normalize_patterns,
+    resolve_path,
+    validate_mode,
+)
+
+from .scanner import ScanOptions, scan_and_process_directory
+
+
+DEFAULT_EXTENSIONS = (".hpp",)
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.description = "Check or fix C/C++ header include guards."
+    parser.add_argument(
+        "scan_dir",
+        nargs="?",
+        default=None,
+        help="Directory to scan. Falls back to dev-tools.toml or the current directory.",
     )
-    parser.add_argument("directory", help="C++ 项目的根目录。")
-    parser.add_argument("--fix", action="store_true", help="自动修复不匹配的头文件守卫。")
-    return parser.parse_args()
+    parser.add_argument(
+        "--relative-to",
+        default=None,
+        help="Base directory used to calculate the expected include guard.",
+    )
+    parser.add_argument(
+        "--extensions",
+        "--ext",
+        nargs="+",
+        default=None,
+        help="Header file extensions to scan, e.g. .hpp .h .hh",
+    )
+    parser.add_argument(
+        "--include",
+        nargs="+",
+        default=None,
+        help="Optional include glob patterns relative to scan_dir.",
+    )
+    parser.add_argument(
+        "--exclude",
+        nargs="+",
+        default=None,
+        help="Optional exclude glob patterns relative to scan_dir.",
+    )
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--check", action="store_true", help="Check only.")
+    mode_group.add_argument("--fix", action="store_true", help="Apply guard fixes in place.")
+    mode_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview mismatches without writing files.",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Optional dev-tools.toml path. Defaults to the nearest config from scan_dir/current directory.",
+    )
 
-def run():
-    args = parse_arguments()
-    
-    if not os.path.isdir(args.directory):
-        print(f"错误: 目录不存在 '{args.directory}'")
-        sys.exit(1)
-        
-    scanner.scan_and_process_directory(args.directory, args.fix)
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="hpp-guard")
+    add_arguments(parser)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return run_from_namespace(args)
+
+
+def run_from_namespace(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    config_start_dir = _resolve_config_start_dir(args.scan_dir, cwd)
+    config = load_config(args.config, config_start_dir)
+
+    scan_dir = resolve_path(
+        args.scan_dir or config.hpp_guard.scan_dir,
+        cwd=cwd,
+        config_path=config.path,
+    ) or cwd
+    relative_to = resolve_path(
+        args.relative_to or config.hpp_guard.relative_to,
+        cwd=cwd,
+        config_path=config.path,
+    ) or scan_dir
+    extensions = normalize_extensions(
+        args.extensions if args.extensions is not None else config.hpp_guard.extensions,
+        DEFAULT_EXTENSIONS,
+    )
+    include = normalize_patterns(
+        args.include if args.include is not None else config.hpp_guard.include
+    )
+    exclude = normalize_patterns(
+        args.exclude if args.exclude is not None else config.hpp_guard.exclude
+    )
+    mode = validate_mode(_resolve_mode(args, config.hpp_guard.mode), "check")
+
+    if not scan_dir.is_dir():
+        print(f"[ERROR] Directory not found: {scan_dir}")
+        return 2
+    if not relative_to.exists():
+        print(f"[ERROR] Relative-base path not found: {relative_to}")
+        return 2
+
+    return scan_and_process_directory(
+        ScanOptions(
+            scan_dir=scan_dir,
+            relative_to=relative_to,
+            extensions=extensions,
+            include=include,
+            exclude=exclude,
+            mode=mode,
+        )
+    )
+
+
+def _resolve_mode(args: argparse.Namespace, config_mode: str | None) -> str | None:
+    if args.fix:
+        return "fix"
+    if args.dry_run:
+        return "dry-run"
+    if args.check:
+        return "check"
+    return config_mode
+
+
+def _resolve_config_start_dir(scan_dir: str | None, cwd: Path) -> Path:
+    if not scan_dir:
+        return cwd
+    candidate = Path(scan_dir)
+    if not candidate.is_absolute():
+        candidate = (cwd / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+    return candidate if candidate.is_dir() else candidate.parent

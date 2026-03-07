@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dev-tools"
+version = "0.2.0"
+description = "Reusable development utilities for source comments and header guards."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "tomli>=2.0.1; python_version < '3.11'",
+]
+
+[project.scripts]
+dev-tools = "dev_tools.cli:main"
+
+[tool.setuptools]
+packages = [
+  "dev_tools",
+  "apps",
+  "apps.auto_comments",
+  "apps.auto_comments.header_tool",
+  "apps.find_hpp",
+  "apps.find_hpp.pch_gen",
+  "apps.find_hpp.pch_gen.core",
+  "apps.find_hpp.pch_gen.io",
+  "apps.fix_include",
+  "apps.fix_include.fix_include",
+  "apps.hpp_guard",
+  "apps.hpp_guard.hpp_guard",
+]

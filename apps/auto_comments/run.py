@@ -1,4 +1,14 @@
-from header_tool.cli import main
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from apps.auto_comments.header_tool.cli import main
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

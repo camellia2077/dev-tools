@@ -1,2 +1,3 @@
-cd /d %~dp0
-python run.py C:\your\path
+@echo off
+cd /d %~dp0\..\..
+python -m dev_tools auto-comments %*
